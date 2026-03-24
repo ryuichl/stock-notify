@@ -1,34 +1,37 @@
 """
-檢查 QQQ 與 200 日均線的關係，在關鍵時刻建立 GitHub Issue 通知。
+監控標的與 200 日均線的關係，在關鍵時刻建立 GitHub Issue 通知。
 
+監控標的：QQQ、0050.TW
 通知時機：
-1. 今天跌破 200MA（第 1 天跌破）
-2. 連續 3 天低於 200MA
-3. 今天漲回 200MA（第 1 天漲回）
-4. 連續 3 天高於 200MA
+1. 跌破 200MA（第 1 天）
+2. 連續 1~3 天低於 200MA
+3. 漲回 200MA（第 1 天）
+4. 連續 1~3 天高於 200MA
 """
 
-import os
-import json
 import subprocess
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
 
 
-def get_qqq_status():
-    """下載 QQQ 資料並計算 200MA 狀態"""
-    qqq = yf.download("QQQ", period="2y", progress=False)
-    if isinstance(qqq.columns, pd.MultiIndex):
-        qqq.columns = qqq.columns.get_level_values(0)
+# ── 監控清單 ──────────────────────────────────────────────
+WATCHLIST = [
+    {"ticker": "QQQ", "name": "QQQ", "currency": "$"},
+    {"ticker": "0050.TW", "name": "0050", "currency": "NT$"},
+]
 
-    qqq["MA200"] = qqq["Close"].rolling(200).mean()
-    qqq.dropna(inplace=True)
-    qqq["above"] = qqq["Close"] > qqq["MA200"]
 
-    # 計算連續天數
-    recent = qqq.tail(10).copy()
-    recent = recent.reset_index()
+def get_status(ticker, name):
+    """下載資料並計算 200MA 狀態"""
+    data = yf.download(ticker, period="2y", progress=False)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
+    data["MA200"] = data["Close"].rolling(200).mean()
+    data.dropna(inplace=True)
+    data["above"] = data["Close"] > data["MA200"]
+
+    recent = data.tail(10).copy().reset_index()
 
     today = recent.iloc[-1]
     today_above = bool(today["above"])
@@ -46,10 +49,10 @@ def get_qqq_status():
         else:
             break
 
-    # 昨天的狀態
     yesterday_above = bool(recent.iloc[-2]["above"]) if len(recent) >= 2 else today_above
 
     return {
+        "name": name,
         "date": today_date,
         "close": today_close,
         "ma200": today_ma200,
@@ -60,35 +63,27 @@ def get_qqq_status():
     }
 
 
-def create_issue(title, body):
+def create_issue(title, body, label=None):
     """用 gh CLI 建立 GitHub Issue"""
-    result = subprocess.run(
-        ["gh", "issue", "create", "--title", title, "--body", body],
-        capture_output=True, text=True
-    )
+    cmd = ["gh", "issue", "create", "--title", title, "--body", body]
+    if label:
+        cmd += ["--label", label]
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"Issue 已建立: {result.stdout.strip()}")
+        print(f"  Issue 已建立: {result.stdout.strip()}")
     else:
-        print(f"建立 Issue 失敗: {result.stderr}")
+        print(f"  建立 Issue 失敗: {result.stderr}")
 
 
-def main():
-    status = get_qqq_status()
-
-    print(f"日期: {status['date']}")
-    print(f"QQQ 收盤: ${status['close']:.2f}")
-    print(f"200MA: ${status['ma200']:.2f}")
-    print(f"差距: {status['diff_pct']:+.2f}%")
-    print(f"位於 200MA {'上方' if status['above'] else '下方'}")
-    print(f"連續 {status['streak']} 天在{'上方' if status['above'] else '下方'}")
-
-    # 判斷通知時機
+def check_alerts(status, currency):
+    """根據狀態產生通知列表"""
+    name = status["name"]
     alerts = []
 
-    # 1. 今天跌破 200MA（昨天在上方，今天在下方）
+    # 1. 今天跌破 200MA
     if status["yesterday_above"] and not status["above"]:
         alerts.append({
-            "title": f"⚠️ QQQ 跌破 200MA ({status['date']})",
+            "title": f"⚠️ {name} 跌破 200MA ({status['date']})",
             "emoji": "⚠️",
             "event": "跌破 200 日均線（第 1 天）",
             "action": "開始觀察，連續 3 天則確認趨勢轉換",
@@ -101,21 +96,20 @@ def main():
         action_map = {
             1: "持續觀察中",
             2: "明天若仍低於 200MA 將觸發 3 天確認訊號",
-            3: "3 天確認訊號觸發！考慮賣出 TQQQ 換入替代標的",
+            3: "3 天確認訊號觸發！考慮操作",
         }
-        # 第 1 天跌破已有獨立通知，連續天數從第 2 天開始通知避免重複
         if status["streak"] >= 2 or not (status["yesterday_above"] and not status["above"]):
             alerts.append({
-                "title": f"{urgency[status['streak']]} QQQ 低於 200MA {labels[status['streak']]} ({status['date']})",
+                "title": f"{urgency[status['streak']]} {name} 低於 200MA {labels[status['streak']]} ({status['date']})",
                 "emoji": urgency[status["streak"]],
                 "event": f"低於 200 日均線（{labels[status['streak']]}）",
                 "action": action_map[status["streak"]],
             })
 
-    # 3. 今天漲回 200MA（昨天在下方，今天在上方）
+    # 3. 今天漲回 200MA
     if not status["yesterday_above"] and status["above"]:
         alerts.append({
-            "title": f"📈 QQQ 漲回 200MA ({status['date']})",
+            "title": f"📈 {name} 漲回 200MA ({status['date']})",
             "emoji": "📈",
             "event": "漲回 200 日均線（第 1 天）",
             "action": "開始觀察，連續 3 天則確認趨勢轉換",
@@ -128,28 +122,52 @@ def main():
         action_map = {
             1: "持續觀察中",
             2: "明天若仍高於 200MA 將觸發 3 天確認訊號",
-            3: "3 天確認訊號觸發！考慮買回 TQQQ",
+            3: "3 天確認訊號觸發！考慮操作",
         }
         if status["streak"] >= 2 or not (not status["yesterday_above"] and status["above"]):
             alerts.append({
-                "title": f"{urgency[status['streak']]} QQQ 站上 200MA {labels[status['streak']]} ({status['date']})",
+                "title": f"{urgency[status['streak']]} {name} 站上 200MA {labels[status['streak']]} ({status['date']})",
                 "emoji": urgency[status["streak"]],
                 "event": f"高於 200 日均線（{labels[status['streak']]}）",
                 "action": action_map[status["streak"]],
             })
 
-    if not alerts:
-        print("\n無需通知，目前無觸發條件。")
-        return
+    return alerts
 
-    for alert in alerts:
-        body = f"""## {alert['emoji']} {alert['event']}
+
+def main():
+    for item in WATCHLIST:
+        ticker = item["ticker"]
+        name = item["name"]
+        currency = item["currency"]
+
+        print(f"\n{'='*50}")
+        print(f"  檢查 {name} ({ticker})")
+        print(f"{'='*50}")
+
+        status = get_status(ticker, name)
+
+        print(f"  日期: {status['date']}")
+        print(f"  收盤: {currency}{status['close']:.2f}")
+        print(f"  200MA: {currency}{status['ma200']:.2f}")
+        print(f"  差距: {status['diff_pct']:+.2f}%")
+        print(f"  位於 200MA {'上方' if status['above'] else '下方'}")
+        print(f"  連續 {status['streak']} 天在{'上方' if status['above'] else '下方'}")
+
+        alerts = check_alerts(status, currency)
+
+        if not alerts:
+            print("  無需通知，目前無觸發條件。")
+            continue
+
+        for alert in alerts:
+            body = f"""## {alert['emoji']} {name} — {alert['event']}
 
 | 項目 | 數值 |
 |------|------|
 | 日期 | {status['date']} |
-| QQQ 收盤價 | ${status['close']:.2f} |
-| 200 日均線 | ${status['ma200']:.2f} |
+| {name} 收盤價 | {currency}{status['close']:.2f} |
+| 200 日均線 | {currency}{status['ma200']:.2f} |
 | 差距 | {status['diff_pct']:+.2f}% |
 | 連續天數 | {status['streak']} 天在{'上方' if status['above'] else '下方'} |
 
@@ -159,8 +177,8 @@ def main():
 ---
 *此通知由 GitHub Actions 自動產生*
 """
-        print(f"\n觸發通知: {alert['title']}")
-        create_issue(alert["title"], body)
+            print(f"  觸發通知: {alert['title']}")
+            create_issue(alert["title"], body)
 
 
 if __name__ == "__main__":
