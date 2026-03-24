@@ -1,10 +1,10 @@
-name: 美股 200MA Check
+name: 台股 200MA Check
 
 on:
   schedule:
-    # 美股收盤後 (美東 16:30 = UTC 21:30 = 台灣 05:30)
+    # 台股收盤後 (台灣 14:00 = UTC 06:00)
     # 週一到週五
-    - cron: "30 21 * * 1-5"
+    - cron: "0 6 * * 1-5"
   workflow_dispatch:
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Check US stocks vs 200MA
+      - name: Check TW stocks vs 200MA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python check_qqq.py us
+        run: python check_qqq.py tw

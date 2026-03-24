@@ -9,16 +9,21 @@
 4. 連續 1~3 天高於 200MA
 """
 
+import sys
 import subprocess
 import yfinance as yf
 import pandas as pd
 
 
 # ── 監控清單 ──────────────────────────────────────────────
-WATCHLIST = [
-    {"ticker": "QQQ", "name": "QQQ", "currency": "$"},
-    {"ticker": "0050.TW", "name": "0050", "currency": "NT$"},
-]
+ALL_TARGETS = {
+    "us": [
+        {"ticker": "QQQ", "name": "QQQ", "currency": "$"},
+    ],
+    "tw": [
+        {"ticker": "0050.TW", "name": "0050", "currency": "NT$"},
+    ],
+}
 
 
 def get_status(ticker, name):
@@ -136,7 +141,18 @@ def check_alerts(status, currency):
 
 
 def main():
-    for item in WATCHLIST:
+    # 支援命令列參數: us, tw, all (預設 all)
+    market = sys.argv[1] if len(sys.argv) > 1 else "all"
+
+    if market == "all":
+        watchlist = [item for group in ALL_TARGETS.values() for item in group]
+    elif market in ALL_TARGETS:
+        watchlist = ALL_TARGETS[market]
+    else:
+        print(f"未知市場: {market}，可用: {', '.join(ALL_TARGETS.keys())}, all")
+        sys.exit(1)
+
+    for item in watchlist:
         ticker = item["ticker"]
         name = item["name"]
         currency = item["currency"]
