@@ -1,0 +1,28 @@
+name: QQQ 200MA Check
+
+on:
+  schedule:
+    # 美股收盤後執行 (美東 16:30 = UTC 21:30，台灣時間 05:30)
+    # 週一到週五執行
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch: # 允許手動觸發
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check QQQ vs 200MA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python check_qqq.py
