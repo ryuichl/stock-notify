@@ -68,11 +68,14 @@ def get_status(ticker, name):
     }
 
 
-def create_issue(title, body, label=None):
-    """用 gh CLI 建立 GitHub Issue"""
-    cmd = ["gh", "issue", "create", "--title", title, "--body", body]
-    if label:
-        cmd += ["--label", label]
+def create_issue(title, body):
+    """用 gh CLI 建立 GitHub Issue，並指派給 repo owner 以觸發 email 通知"""
+    cmd = [
+        "gh", "issue", "create",
+        "--title", title,
+        "--body", body,
+        "--assignee", "ryuichl",
+    ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0:
         print(f"  Issue 已建立: {result.stdout.strip()}")
