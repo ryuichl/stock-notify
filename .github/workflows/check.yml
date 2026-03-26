@@ -25,4 +25,4 @@ jobs:
       - name: Check US stocks vs 200MA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python check_qqq.py us
+        run: python check_ma200.py us

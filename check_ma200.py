@@ -1,7 +1,7 @@
 """
 監控標的與 200 日均線的關係，在關鍵時刻建立 GitHub Issue 通知。
 
-監控標的：QQQ、0050.TW
+監控標的：QQQ、台股大盤加權指數(TAIEX)
 通知時機：
 1. 跌破 200MA（第 1 天）
 2. 連續 1~3 天低於 200MA
@@ -21,7 +21,7 @@ ALL_TARGETS = {
         {"ticker": "QQQ", "name": "QQQ", "currency": "$"},
     ],
     "tw": [
-        {"ticker": "0050.TW", "name": "0050", "currency": "NT$"},
+        {"ticker": "^TWII", "name": "台股大盤", "currency": ""},
     ],
 }
 
