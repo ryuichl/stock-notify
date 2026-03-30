@@ -1,5 +1,5 @@
 """
-監控標的與 200 日均線的關係，在關鍵時刻建立 GitHub Issue 通知。
+監控標的與均線的關係，在關鍵時刻建立 GitHub Issue 通知。
 
 監控標的：QQQ、台股大盤加權指數(TAIEX)
 通知時機：
@@ -7,6 +7,8 @@
 2. 連續 1~3 天低於 200MA
 3. 漲回 200MA（第 1 天）
 4. 連續 1~3 天高於 200MA
+5. 跌破 2 年線 (504MA) — 金字塔買入訊號
+6. 跌破 3 年線 (756MA) — 金字塔加碼訊號
 """
 
 import sys
@@ -27,13 +29,15 @@ ALL_TARGETS = {
 
 
 def get_status(ticker, name):
-    """下載資料並計算 200MA 狀態"""
-    data = yf.download(ticker, period="2y", progress=False)
+    """下載資料並計算 200MA / 504MA / 756MA 狀態"""
+    data = yf.download(ticker, period="5y", progress=False)
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
 
     data["MA200"] = data["Close"].rolling(200).mean()
-    data.dropna(inplace=True)
+    data["MA504"] = data["Close"].rolling(504).mean()
+    data["MA756"] = data["Close"].rolling(756).mean()
+    data.dropna(subset=["MA200"], inplace=True)
     data["above"] = data["Close"] > data["MA200"]
 
     recent = data.tail(10).copy().reset_index()
@@ -56,6 +60,11 @@ def get_status(ticker, name):
 
     yesterday_above = bool(recent.iloc[-2]["above"]) if len(recent) >= 2 else today_above
 
+    # 2 年線 / 3 年線狀態
+    today_ma504 = float(today["MA504"]) if pd.notna(today["MA504"]) else None
+    today_ma756 = float(today["MA756"]) if pd.notna(today["MA756"]) else None
+    yesterday = recent.iloc[-2] if len(recent) >= 2 else today
+
     return {
         "name": name,
         "date": today_date,
@@ -65,6 +74,9 @@ def get_status(ticker, name):
         "above": today_above,
         "yesterday_above": yesterday_above,
         "streak": streak,
+        "ma504": today_ma504,
+        "ma756": today_ma756,
+        "yesterday_close": float(yesterday["Close"]),
     }
 
 
@@ -140,6 +152,52 @@ def check_alerts(status, currency):
                 "action": action_map[status["streak"]],
             })
 
+    # 5. 跌破 2 年線 (504MA) — 金字塔買入訊號
+    if status["ma504"] is not None:
+        today_below_504 = status["close"] <= status["ma504"]
+        yesterday_below_504 = status["yesterday_close"] <= status["ma504"]
+        if today_below_504 and not yesterday_below_504:
+            diff_504 = (status["close"] / status["ma504"] - 1) * 100
+            alerts.append({
+                "title": f"🔻 {name} 跌破 2 年線 504MA ({status['date']})",
+                "emoji": "🔻",
+                "event": f"跌破 2 年線 (504 日均線)",
+                "action": "金字塔買入訊號！考慮買入第一層倉位",
+                "extra_rows": f"| 2 年線 (504MA) | {currency}{status['ma504']:.2f} |\n| 距 2 年線 | {diff_504:+.2f}% |",
+            })
+        elif not today_below_504 and yesterday_below_504:
+            diff_504 = (status["close"] / status["ma504"] - 1) * 100
+            alerts.append({
+                "title": f"↩️ {name} 漲回 2 年線 504MA ({status['date']})",
+                "emoji": "↩️",
+                "event": f"漲回 2 年線 (504 日均線) 上方",
+                "action": "價格已回到 2 年線上方",
+                "extra_rows": f"| 2 年線 (504MA) | {currency}{status['ma504']:.2f} |\n| 距 2 年線 | {diff_504:+.2f}% |",
+            })
+
+    # 6. 跌破 3 年線 (756MA) — 金字塔加碼訊號
+    if status["ma756"] is not None:
+        today_below_756 = status["close"] <= status["ma756"]
+        yesterday_below_756 = status["yesterday_close"] <= status["ma756"]
+        if today_below_756 and not yesterday_below_756:
+            diff_756 = (status["close"] / status["ma756"] - 1) * 100
+            alerts.append({
+                "title": f"⬇️ {name} 跌破 3 年線 756MA ({status['date']})",
+                "emoji": "⬇️",
+                "event": f"跌破 3 年線 (756 日均線)",
+                "action": "金字塔加碼訊號！考慮買入剩餘全部倉位",
+                "extra_rows": f"| 3 年線 (756MA) | {currency}{status['ma756']:.2f} |\n| 距 3 年線 | {diff_756:+.2f}% |",
+            })
+        elif not today_below_756 and yesterday_below_756:
+            diff_756 = (status["close"] / status["ma756"] - 1) * 100
+            alerts.append({
+                "title": f"↩️ {name} 漲回 3 年線 756MA ({status['date']})",
+                "emoji": "↩️",
+                "event": f"漲回 3 年線 (756 日均線) 上方",
+                "action": "價格已回到 3 年線上方",
+                "extra_rows": f"| 3 年線 (756MA) | {currency}{status['ma756']:.2f} |\n| 距 3 年線 | {diff_756:+.2f}% |",
+            })
+
     return alerts
 
 
@@ -172,6 +230,12 @@ def main():
         print(f"  差距: {status['diff_pct']:+.2f}%")
         print(f"  位於 200MA {'上方' if status['above'] else '下方'}")
         print(f"  連續 {status['streak']} 天在{'上方' if status['above'] else '下方'}")
+        if status['ma504'] is not None:
+            diff_504 = (status['close'] / status['ma504'] - 1) * 100
+            print(f"  2年線(504MA): {currency}{status['ma504']:.2f} ({diff_504:+.2f}%)")
+        if status['ma756'] is not None:
+            diff_756 = (status['close'] / status['ma756'] - 1) * 100
+            print(f"  3年線(756MA): {currency}{status['ma756']:.2f} ({diff_756:+.2f}%)")
 
         alerts = check_alerts(status, currency)
 
@@ -180,6 +244,9 @@ def main():
             continue
 
         for alert in alerts:
+            extra = alert.get("extra_rows", "")
+            if extra:
+                extra = "\n" + extra
             body = f"""## {alert['emoji']} {name} — {alert['event']}
 
 | 項目 | 數值 |
@@ -188,7 +255,7 @@ def main():
 | {name} 收盤價 | {currency}{status['close']:.2f} |
 | 200 日均線 | {currency}{status['ma200']:.2f} |
 | 差距 | {status['diff_pct']:+.2f}% |
-| 連續天數 | {status['streak']} 天在{'上方' if status['above'] else '下方'} |
+| 連續天數 | {status['streak']} 天在{'上方' if status['above'] else '下方'} |{extra}
 
 ### 建議動作
 {alert['action']}
