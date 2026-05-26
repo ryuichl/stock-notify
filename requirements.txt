@@ -1,2 +1,2 @@
-yfinance
-pandas
+yfinance==1.2.0
+pandas==3.0.1

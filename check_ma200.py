@@ -40,13 +40,15 @@ def get_status(ticker, name):
     data.dropna(subset=["MA200"], inplace=True)
     data["above"] = data["Close"] > data["MA200"]
 
-    recent = data.tail(10).copy().reset_index()
+    recent = data.tail(10).copy()
 
     today = recent.iloc[-1]
     today_above = bool(today["above"])
     today_close = float(today["Close"])
     today_ma200 = float(today["MA200"])
-    today_date = today["Date"].strftime("%Y-%m-%d")
+    # 直接由 DatetimeIndex 取得日期，避免依賴 reset_index() 後的欄位名稱
+    # (不同 yfinance/pandas 版本下該欄位名稱可能不是 "Date")
+    today_date = pd.Timestamp(recent.index[-1]).strftime("%Y-%m-%d")
     diff_pct = (today_close / today_ma200 - 1) * 100
 
     # 連續幾天在同一側
