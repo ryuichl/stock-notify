@@ -12,6 +12,7 @@
 """
 
 import sys
+import json
 import subprocess
 import yfinance as yf
 import pandas as pd
@@ -97,6 +98,18 @@ def issue_exists(title):
         capture_output=True, text=True, encoding="utf-8",
     )
     return title in result.stdout.splitlines()
+
+
+def close_old_issues(name, keep_titles):
+    """同標的有新通知時，關閉之前還開著的 Issue"""
+    result = subprocess.run(
+        ["gh", "issue", "list", "--state", "open", "--limit", "500", "--json", "number,title"],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    for issue in json.loads(result.stdout or "[]"):
+        if f" {name} " in issue["title"] and issue["title"] not in keep_titles:
+            subprocess.run(["gh", "issue", "close", str(issue["number"]), "--comment", "已有較新的通知，自動關閉"])
+            print(f"  已關閉舊 Issue #{issue['number']}: {issue['title']}")
 
 
 def create_issue(title, body):
@@ -287,6 +300,8 @@ def main():
 """
             print(f"  觸發通知: {alert['title']}")
             create_issue(alert["title"], body)
+
+        close_old_issues(name, [a["title"] for a in alerts])
 
 
 if __name__ == "__main__":
