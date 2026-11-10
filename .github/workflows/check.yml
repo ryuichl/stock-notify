@@ -1,10 +1,7 @@
 name: 美股 200MA Check
 
 on:
-  schedule:
-    # 美股收盤後 (美東 16:30 = UTC 21:30 = 台灣 05:30)
-    # 週一到週五
-    - cron: "30 21 * * 1-5"
+  # 由外部 crontab 呼叫 workflow_dispatch (台灣時間 30 5 * * 2-6)，GitHub schedule 延遲數小時故不用
   workflow_dispatch:
 
 jobs:
