@@ -28,11 +28,20 @@ ALL_TARGETS = {
 }
 
 
+def fill_recent(ticker, close):
+    """Yahoo 日線最近幾天常是 NaN 或整列缺漏：用小時線補，最後一天用即時價(收盤後即收盤價)"""
+    hourly = yf.download(ticker, period="5d", interval="1h", progress=False)["Close"].squeeze().dropna()
+    recent = hourly.groupby(hourly.index.tz_localize(None).normalize()).last()
+    recent.iloc[-1] = yf.Ticker(ticker).fast_info["lastPrice"]
+    return close.dropna().combine_first(recent)
+
+
 def get_status(ticker, name):
     """下載資料並計算 200MA / 504MA / 756MA 狀態"""
     data = yf.download(ticker, period="5y", progress=False)
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
+    data = fill_recent(ticker, data["Close"]).to_frame("Close")
 
     data["MA200"] = data["Close"].rolling(200).mean()
     data["MA504"] = data["Close"].rolling(504).mean()
@@ -82,8 +91,19 @@ def get_status(ticker, name):
     }
 
 
+def issue_exists(title):
+    result = subprocess.run(
+        ["gh", "issue", "list", "--state", "all", "--limit", "500", "--json", "title", "--jq", ".[].title"],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    return title in result.stdout.splitlines()
+
+
 def create_issue(title, body):
     """用 gh CLI 建立 GitHub Issue，並指派給 repo owner 以觸發 email 通知"""
+    if issue_exists(title):
+        print(f"  已有相同 Issue，略過: {title}")
+        return
     cmd = [
         "gh", "issue", "create",
         "--title", title,
