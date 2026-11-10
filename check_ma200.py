@@ -89,6 +89,10 @@ def get_status(ticker, name):
         "ma504": today_ma504,
         "ma756": today_ma756,
         "yesterday_close": float(yesterday["Close"]),
+        "last3": [
+            (pd.Timestamp(d).strftime("%Y-%m-%d"), float(r["Close"]), float(r["MA200"]))
+            for d, r in recent.tail(3).iterrows()
+        ],
     }
 
 
@@ -278,6 +282,11 @@ def main():
             print("  無需通知，目前無觸發條件。")
             continue
 
+        last3_rows = "\n".join(
+            f"| {d} | {currency}{c:.2f} | {currency}{m:.2f} | {(c / m - 1) * 100:+.2f}% | {'上方' if c > m else '下方'} |"
+            for d, c, m in status["last3"]
+        )
+
         for alert in alerts:
             extra = alert.get("extra_rows", "")
             if extra:
@@ -291,6 +300,11 @@ def main():
 | 200 日均線 | {currency}{status['ma200']:.2f} |
 | 差距 | {status['diff_pct']:+.2f}% |
 | 連續天數 | {status['streak']} 天在{'上方' if status['above'] else '下方'} |{extra}
+
+### 近三日
+| 日期 | 收盤 | 200MA | 差距 | 位置 |
+|------|------|------|------|------|
+{last3_rows}
 
 ### 建議動作
 {alert['action']}
